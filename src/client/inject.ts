@@ -124,6 +124,7 @@ type T_IDDB_VALUE = {
 
 const EIP_191_PREFIX = "eip191:";
 const FARCASTER_XYZ_API = 'https://client.farcaster.xyz/v2'
+const TOKEN_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 
 const hasEthWallet = () => {
@@ -140,11 +141,12 @@ const generateApiToken = async (): Promise<T_RESULT_GEN_AUTH_TOKEN> => {
     try {
  
         const timestamp = Date.now();
+        const expiresAt = timestamp + TOKEN_TTL_MS;
         const payload = {
             method: "generateToken",
             params: {
                 timestamp,
-                expiresAt: 1777046287381
+                expiresAt
             },
         };
         const msgToSign = createFCMessage(payload);
@@ -179,7 +181,7 @@ const generateApiToken = async (): Promise<T_RESULT_GEN_AUTH_TOKEN> => {
             const data = await req.json();
             const token = data?.result?.token?.secret;
             if (token) {
-                await addFCAuthToken({ secret: token, expiresAt: 1777046287381 });
+                await addFCAuthToken({ secret: token, expiresAt });
                 return { success: true, data: AUTH_SUCCESS }
             }
             return { success: false, data: NO_AUTH_TOKEN }

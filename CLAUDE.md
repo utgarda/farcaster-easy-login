@@ -46,7 +46,7 @@ The extension has **three execution contexts** and the auth flow crosses all of 
   3. `personal_sign` the serialized payload with the custody address.
   4. POST to `https://client.farcaster.xyz/v2/auth` with `Authorization: Bearer eip191:<base64(sig)>`.
   5. On success, write `{secret, expiresAt}` into IndexedDB at `localforage / keyvaluepairs / auth-token` (this is the schema farcaster.xyz reads to consider the user logged in), then `window.location.reload()`.
-- Note: `expiresAt` and the `expiresAt` in the signed payload are currently **hardcoded** (`1777046287381`, ~2026-04-24). When this date passes, freshly generated tokens are dead on arrival; bumping the constant is the fix.
+- Note: `expiresAt` is computed as `Date.now() + TOKEN_TTL_MS` (1 year). The same value goes into the signed payload and the IndexedDB record — they must match. If the Farcaster API ever rejects a 1-year TTL, lower `TOKEN_TTL_MS`. (Earlier versions hardcoded `1777046287381` and broke on 2026-04-24.)
 
 ### Service worker (`src/service-worker.ts`)
 - Pure notification dispatcher. Listens via `chrome.runtime.onMessage` and shows a desktop notification per status (`AUTH_SUCCESS` / `NO_WALLET` / `SIG_DENIED` / `NO_AUTH_TOKEN`). No network, no key handling.
