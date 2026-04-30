@@ -27,11 +27,13 @@ To load locally: `bun run build`, then load `dist/` as an unpacked extension in 
 The extension has **three execution contexts** and the auth flow crosses all of them. Read all three files together when changing the login flow — a change in one usually requires changes in another.
 
 ### 1. Popup (`src/action-page/`, `src/pages/`, `src/components/`, `src/lib/`)
+
 - Svelte 5 (runes mode: `$state`, `$props`, `$bindable`). Entry is `src/action-page/index.ts` which mounts `pages/main.svelte`.
 - The "Sign in" button in `pages/main-tab.svelte` does **not** sign anything itself. It uses `chrome.scripting.executeScript` to inject a small function into the active farcaster.xyz tab that calls `window.postMessage({type:'farcaster-login'}, '*')`. This is the trigger that kicks off the in-page flow.
 - `src/lib/utils.ts` wraps `chrome.storage.sync` for popup options (theme, last tab); `src/lib/extension-runtime.ts` is a thin wrapper for `chrome.tabs.create`.
 
 ### 2. Content script (`src/client/content.ts`)
+
 - Declared in `src/manifest.json` for `https://farcaster.xyz/*`, `all_frames: true`, `run_at: document_start`.
 - Two jobs:
   - Inject `src/client/inject.js` into the page's main world via a `<script src=chrome.runtime.getURL(...)>` tag (the file is listed under `web_accessible_resources` so the page can load it).
@@ -39,19 +41,22 @@ The extension has **three execution contexts** and the auth flow crosses all of 
 - The content script must be IIFE-bundled (not ESM), which is why `compile-inject` and `content` use `bun build --format iife` and `post-build` swaps the manifest path.
 
 ### 3. Injected page script (`src/client/inject.ts`)
+
 - Runs in the page's main world so it can access `window.ethereum`. **This is the only place that touches the wallet or the Farcaster API.**
 - Listens for `{type:'farcaster-login'}` postMessages from the same window, then:
   1. `eth_requestAccounts` → custody address.
   2. Builds a deterministic `generateToken` payload via `serialize()` (custom canonical JSON: keys sorted, no whitespace, rejects `NaN`/`Infinity`). The Farcaster API verifies the signature against this exact byte sequence — **do not change `serialize()` without matching the server's expectation**.
   3. `personal_sign` the serialized payload with the custody address.
-  4. POST to `https://client.farcaster.xyz/v2/auth` with `Authorization: Bearer eip191:<base64(sig)>`.
+  4. PUT to `https://client.farcaster.xyz/v2/onboarding-state` with body `{ authRequest: <signed payload> }` and `Authorization: Bearer eip191:<base64(sig)>`. The signature covers the canonicalized inner `authRequest` payload, **not** the wrapper.
   5. On success, write `{secret, expiresAt}` into IndexedDB at `localforage / keyvaluepairs / auth-token` (this is the schema farcaster.xyz reads to consider the user logged in), then `window.location.reload()`.
 - Note: `expiresAt` is computed as `Date.now() + TOKEN_TTL_MS` (1 year). The same value goes into the signed payload and the IndexedDB record — they must match. If the Farcaster API ever rejects a 1-year TTL, lower `TOKEN_TTL_MS`. (Earlier versions hardcoded `1777046287381` and broke on 2026-04-24.)
 
 ### Service worker (`src/service-worker.ts`)
+
 - Pure notification dispatcher. Listens via `chrome.runtime.onMessage` and shows a desktop notification per status (`AUTH_SUCCESS` / `NO_WALLET` / `SIG_DENIED` / `NO_AUTH_TOKEN`). No network, no key handling.
 
 ### Shared message constants
+
 `src/client/messges.ts` (note the typo in the filename — kept intentionally; importers depend on it). Both `content.ts` and `service-worker.ts` import from it. The injected script declares its own copies as local consts because it's bundled standalone as IIFE.
 
 ## Conventions and gotchas
